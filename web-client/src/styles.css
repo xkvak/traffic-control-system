@@ -175,6 +175,12 @@ body {
   font-weight: 700;
 }
 
+.queue-rank-meta {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
 .queue-error {
   margin: 10px 0 0;
   color: #b91c1c;
