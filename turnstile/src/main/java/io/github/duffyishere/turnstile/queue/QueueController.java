@@ -25,7 +25,6 @@ public class QueueController {
                 .map(data -> ServerSentEvent.<QueueResponse>builder()
                         .event(data.status().toLowerCase())
                         .data(data)
-                        .build())
-                .takeUntil(event -> "ALLOWED".equalsIgnoreCase(event.data().status()));
+                        .build());
     }
 }

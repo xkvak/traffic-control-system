@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.connection.ReactiveRedisConnectionFactory;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.data.redis.listener.ReactiveRedisMessageListenerContainer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
@@ -33,6 +34,13 @@ public class RedisConfiguration {
                 .build();
 
         return new ReactiveRedisTemplate<>(factory, serializationContext);
+    }
+
+    @Bean
+    public ReactiveRedisMessageListenerContainer reactiveRedisMessageListenerContainer(
+            ReactiveRedisConnectionFactory factory
+    ) {
+        return new ReactiveRedisMessageListenerContainer(factory);
     }
 
     @Bean

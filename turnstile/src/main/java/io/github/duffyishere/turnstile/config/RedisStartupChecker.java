@@ -2,15 +2,16 @@ package io.github.duffyishere.turnstile.config;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationListener;
-import org.springframework.data.redis.connection.ReactiveRedisConnectionFactory;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
 @Slf4j
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "app.redis.startup-check.enabled", havingValue = "true", matchIfMissing = true)
 public class RedisStartupChecker implements ApplicationListener<ApplicationReadyEvent> {
 
     private final ReactiveRedisTemplate<String, String> reactiveRedisTemplate;

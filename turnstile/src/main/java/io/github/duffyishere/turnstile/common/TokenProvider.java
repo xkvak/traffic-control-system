@@ -9,6 +9,7 @@ import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.Date;
@@ -17,6 +18,10 @@ import java.util.UUID;
 
 @Component
 public class TokenProvider {
+
+    @Value("${turnstile.token.ttl-seconds:60}")
+    private long tokenTtlSeconds;
+
     private RSAKey rsaJWK;
 
     @PostConstruct
@@ -34,10 +39,13 @@ public class TokenProvider {
     }
 
     public String generateToken(String requestId) throws JOSEException {
+        Date issuedAt = new Date();
+        Date expiresAt = new Date(issuedAt.getTime() + (tokenTtlSeconds * 1000));
         JWTClaimsSet claimsSet = new JWTClaimsSet.Builder()
                 .subject("turnstile")
                 .claim("requestId", requestId)
-                .issueTime(new Date())
+                .issueTime(issuedAt)
+                .expirationTime(expiresAt)
                 .build();
 
         SignedJWT signedJWT = new SignedJWT(new JWSHeader(JWSAlgorithm.RS256), claimsSet);
