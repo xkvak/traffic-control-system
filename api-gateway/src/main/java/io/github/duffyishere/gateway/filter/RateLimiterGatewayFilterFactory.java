@@ -37,21 +37,18 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     private final TokenBucketResolver tokenBucketResolver;
     private final ReactiveJwtDecoder jwtDecoder;
     private final boolean rateLimiterEnabled;
-    private final boolean queueUnauthenticatedRequests;
     private final long redirectThreshold;
 
     public RateLimiterGatewayFilterFactory(
             TokenBucketResolver tokenBucketResolver,
             ReactiveJwtDecoder jwtDecoder,
             @Value("${rate-limiter.enabled:true}") boolean rateLimiterEnabled,
-            @Value("${rate-limiter.queue-unauthenticated-requests:true}") boolean queueUnauthenticatedRequests,
             @Value("${rate-limiter.bucket.redirect-threshold}") long redirectThreshold
     ) {
         super(Config.class);
         this.tokenBucketResolver = tokenBucketResolver;
         this.jwtDecoder = jwtDecoder;
         this.rateLimiterEnabled = rateLimiterEnabled;
-        this.queueUnauthenticatedRequests = queueUnauthenticatedRequests;
         this.redirectThreshold = redirectThreshold;
     }
 
@@ -64,9 +61,7 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
 
             return extractBearerToken(exchange)
                     .map(token -> validateQueueToken(token, exchange, chain))
-                    .orElseGet(() -> queueUnauthenticatedRequests
-                            ? enqueueRequest(exchange)
-                            : applyAdmissionControl(exchange, chain));
+                    .orElseGet(() -> applyAdmissionControl(exchange, chain));
         };
     }
 

@@ -6,7 +6,7 @@
 ## 프로젝트 개요
 
 - Gateway에서 요청을 수용하고 레이트 리미트를 적용합니다.
-- JWT가 없는 요청은 Turnstile 대기열로 우회하고, 대기열 통과 속도는 Redis 기반 토큰 버킷으로 제어합니다.
+- JWT가 없는 요청은 admission bucket 잔여량을 확인하고, 부족할 때만 Turnstile 대기열로 우회합니다.
 - 대기열에서 순번 상태를 SSE로 전달하고, 통과 시 JWT를 발급합니다.
 - JWT를 가진 요청만 예약 API로 진입해 좌석 예약을 수행합니다.
 
@@ -17,7 +17,7 @@ flowchart LR
     Client["Client"] --> Gateway["API Gateway"]
     Gateway -->|Bearer JWT 유효| App1["Consumer API #1"]
     Gateway -->|Bearer JWT 유효| App2["Consumer API #2"]
-    Gateway -->|대기열 응답(JSON)| Client
+    Gateway -->|토큰 부족 시 대기열 응답(JSON)| Client
     Client -->|SSE 구독| Turnstile["Turnstile"]
     Turnstile -->|SSE 상태| Client
     Turnstile -->|JWT 발급| Client
@@ -53,7 +53,7 @@ flowchart LR
 1. 클라이언트가 `GET /api/v1/concerts/seats`, `POST /api/v1/reservation` 호출
 2. Gateway 필터에서 `Authorization` 헤더(JWT) 확인
 3. JWT 유효 시 `consumer-api`로 전달
-4. JWT 없음/검증 실패 시 Gateway가 `202`와 queue 메타데이터(`requestId`, `queuePagePath`, `queueSsePath`)를 반환
+4. JWT 검증 실패 또는 admission bucket 임계치 미만이면 Gateway가 `202`와 queue 메타데이터(`requestId`, `queuePagePath`, `queueSsePath`)를 반환
 5. 클라이언트가 해당 정보로 Turnstile SSE에 연결하고, Turnstile이 요청을 Redis ZSET에 등록한 뒤 `WAITING`/`ALLOWED` 상태를 전달
 6. `ALLOWED` 시 토큰을 획득한 클라이언트가 재요청
 7. 예약 API에서 좌석 락 획득 후 예약 처리

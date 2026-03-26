@@ -33,36 +33,12 @@ import static org.mockito.Mockito.when;
 class ApiGatewayApplicationTests {
 
     @Test
-    void queuesUnauthenticatedRequestsWithoutTouchingAdmissionBucketByDefault() throws Exception {
-        TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
-        ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
-
-        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
-        GatewayFilterChain chain = mock(GatewayFilterChain.class);
-        MockServerWebExchange exchange = MockServerWebExchange.from(
-                MockServerHttpRequest.get("/api/v1/concerts/seats").build()
-        );
-
-        StepVerifier.create(filterFactory.apply(config()).filter(exchange, chain))
-                .verifyComplete();
-
-        verify(chain, never()).filter(exchange);
-        verify(tokenBucketResolver, never()).tryConsumeAboveThreshold(2L);
-        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
-        String payload = responseBody(exchange);
-        assertThat(extractJsonValue(payload, "status")).isEqualTo("QUEUED");
-        assertThat(extractJsonValue(payload, "requestId")).isNotBlank();
-        assertThat(extractJsonValue(payload, "queuePagePath")).startsWith("/queue?requestId=");
-        assertThat(extractJsonValue(payload, "queueSsePath")).startsWith("/turnstile/queue/events?requestId=");
-    }
-
-    @Test
-    void allowsDirectAccessWhenLegacyAdmissionBucketAcceptsRequest() {
+    void allowsDirectAccessWhenAdmissionBucketAcceptsUnauthenticatedRequest() {
         TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
         ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
         when(tokenBucketResolver.tryConsumeAboveThreshold(2L)).thenReturn(Mono.just(Boolean.TRUE));
 
-        RateLimiterGatewayFilterFactory filterFactory = legacyAdmissionFilterFactory(tokenBucketResolver, jwtDecoder);
+        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
         MockServerWebExchange exchange = MockServerWebExchange.from(
                 MockServerHttpRequest.get("/api/v1/concerts/seats").build()
@@ -73,16 +49,17 @@ class ApiGatewayApplicationTests {
                 .verifyComplete();
 
         verify(chain).filter(exchange);
+        verify(tokenBucketResolver).tryConsumeAboveThreshold(2L);
         assertThat(exchange.getResponse().getStatusCode()).isNull();
     }
 
     @Test
-    void queuesRequestWhenAdmissionBucketRejectsRequest() throws Exception {
+    void queuesUnauthenticatedRequestWhenAdmissionBucketRejectsRequest() throws Exception {
         TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
         ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
         when(tokenBucketResolver.tryConsumeAboveThreshold(2L)).thenReturn(Mono.just(Boolean.FALSE));
 
-        RateLimiterGatewayFilterFactory filterFactory = legacyAdmissionFilterFactory(tokenBucketResolver, jwtDecoder);
+        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
         MockServerWebExchange exchange = MockServerWebExchange.from(
                 MockServerHttpRequest.get("/api/v1/concerts/seats?concertId=1").build()
@@ -156,14 +133,7 @@ class ApiGatewayApplicationTests {
             TokenBucketResolver tokenBucketResolver,
             ReactiveJwtDecoder jwtDecoder
     ) {
-        return new RateLimiterGatewayFilterFactory(tokenBucketResolver, jwtDecoder, true, true, 2L);
-    }
-
-    private RateLimiterGatewayFilterFactory legacyAdmissionFilterFactory(
-            TokenBucketResolver tokenBucketResolver,
-            ReactiveJwtDecoder jwtDecoder
-    ) {
-        return new RateLimiterGatewayFilterFactory(tokenBucketResolver, jwtDecoder, true, false, 2L);
+        return new RateLimiterGatewayFilterFactory(tokenBucketResolver, jwtDecoder, true, 2L);
     }
 
     private RateLimiterGatewayFilterFactory.Config config() {

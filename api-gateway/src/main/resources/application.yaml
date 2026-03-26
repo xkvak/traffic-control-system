@@ -11,7 +11,6 @@ app:
 
 rate-limiter:
   enabled: true
-  queue-unauthenticated-requests: ${QUEUE_UNAUTHENTICATED_REQUESTS:true}
   bucket:
     key: ${ADMISSION_BUCKET_KEY:admission}
     capacity: ${ADMISSION_BUCKET_CAPACITY:300}
