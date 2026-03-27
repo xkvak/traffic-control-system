@@ -183,11 +183,9 @@ python3 scripts/gateway_queue_load_test.py \
   --verbose
 ```
 
-다만 macOS Docker Desktop 환경에서는 `localhost` 포트 포워딩이 고부하에서 먼저 흔들릴 수 있습니다.
+필요하면 아래처럼 Docker 내부 네트워크에서 실행할 수도 있습니다.
 
-가능하면 아래처럼 Docker 내부 네트워크에서 실행하는 편이 더 안정적입니다.
-
-권장 예시:
+예시:
 
 ```bash
 docker run --rm \
