@@ -79,10 +79,10 @@ GET  /.well-known/openid-configuration
 
 | 항목 | 기본값 |
 | --- | --- |
-| admission bucket capacity | `300` |
-| admission refill amount | `120` |
+| admission bucket capacity | `100` |
+| admission refill amount | `100` |
 | admission refill interval | `1s` |
-| queue 진입 기준 | 남은 토큰 `2` 이하 |
+| queue 진입 기준 | 소비 후 남은 토큰 `2` 미만 |
 | turnstile dispatch interval | `10ms` |
 | turnstile dispatch max batch | `256` |
 | turnstile token/grant TTL | `60s` |
@@ -91,7 +91,7 @@ GET  /.well-known/openid-configuration
 값을 바꾸고 실행하려면 환경변수를 함께 넘깁니다.
 
 ```bash
-ADMISSION_BUCKET_REFILL_AMOUNT=30 docker compose up --build
+ADMISSION_BUCKET_REFILL_AMOUNT=150 docker compose up --build
 ```
 
 ## 부하 테스트

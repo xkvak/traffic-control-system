@@ -13,8 +13,8 @@ rate-limiter:
   enabled: true
   bucket:
     key: ${ADMISSION_BUCKET_KEY:admission}
-    capacity: ${ADMISSION_BUCKET_CAPACITY:300}
-    refill-token-amount: ${ADMISSION_BUCKET_REFILL_AMOUNT:30}
+    capacity: ${ADMISSION_BUCKET_CAPACITY:100}
+    refill-token-amount: ${ADMISSION_BUCKET_REFILL_AMOUNT:100}
     refill-interval-seconds: ${ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS:1}
     redirect-threshold: ${ADMISSION_BUCKET_REDIRECT_THRESHOLD:2}
     rejection-cooldown-millis: ${ADMISSION_BUCKET_REJECTION_COOLDOWN_MILLIS:-1}
