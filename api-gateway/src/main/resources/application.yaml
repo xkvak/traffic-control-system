@@ -17,6 +17,8 @@ rate-limiter:
     refill-token-amount: ${ADMISSION_BUCKET_REFILL_AMOUNT:30}
     refill-interval-seconds: ${ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS:1}
     redirect-threshold: ${ADMISSION_BUCKET_REDIRECT_THRESHOLD:2}
+    rejection-cooldown-millis: ${ADMISSION_BUCKET_REJECTION_COOLDOWN_MILLIS:-1}
+    max-in-flight-checks: ${ADMISSION_BUCKET_MAX_IN_FLIGHT_CHECKS:100}
 
 ---
 server:
