@@ -1,4 +1,6 @@
 package io.github.duffyishere.gateway.filter;
+
+import io.github.duffyishere.gateway.common.AdmissionRejectionCooldown;
 import io.github.duffyishere.gateway.common.TokenBucketResolver;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -35,18 +37,21 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     private static final String QUEUE_SSE_PATH = "/turnstile/queue/events";
 
     private final TokenBucketResolver tokenBucketResolver;
+    private final AdmissionRejectionCooldown admissionRejectionCooldown;
     private final ReactiveJwtDecoder jwtDecoder;
     private final boolean rateLimiterEnabled;
     private final long redirectThreshold;
 
     public RateLimiterGatewayFilterFactory(
             TokenBucketResolver tokenBucketResolver,
+            AdmissionRejectionCooldown admissionRejectionCooldown,
             ReactiveJwtDecoder jwtDecoder,
             @Value("${rate-limiter.enabled:true}") boolean rateLimiterEnabled,
             @Value("${rate-limiter.bucket.redirect-threshold}") long redirectThreshold
     ) {
         super(Config.class);
         this.tokenBucketResolver = tokenBucketResolver;
+        this.admissionRejectionCooldown = admissionRejectionCooldown;
         this.jwtDecoder = jwtDecoder;
         this.rateLimiterEnabled = rateLimiterEnabled;
         this.redirectThreshold = redirectThreshold;
@@ -82,8 +87,19 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
             ServerWebExchange exchange,
             GatewayFilterChain chain
     ) {
+        if (admissionRejectionCooldown.isActive()) {
+            return enqueueRequest(exchange);
+        }
+
         return tokenBucketResolver.tryConsumeAboveThreshold(redirectThreshold)
-                .flatMap(allowed -> allowed ? chain.filter(exchange) : enqueueRequest(exchange))
+                .flatMap(allowed -> {
+                    if (allowed) {
+                        return chain.filter(exchange);
+                    }
+
+                    admissionRejectionCooldown.start();
+                    return enqueueRequest(exchange);
+                })
                 .onErrorResume(error -> {
                     log.warn("Queue response because admission check failed: {}", error.getMessage());
                     return enqueueRequest(exchange);

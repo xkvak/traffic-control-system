@@ -1,5 +1,6 @@
 package io.github.duffyishere.gateway;
 
+import io.github.duffyishere.gateway.common.AdmissionRejectionCooldown;
 import io.github.duffyishere.gateway.common.TokenBucketResolver;
 import io.github.duffyishere.gateway.filter.RateLimiterGatewayFilterFactory;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class ApiGatewayApplicationTests {
@@ -38,10 +41,11 @@ class ApiGatewayApplicationTests {
     @Test
     void allowsDirectAccessWhenAdmissionBucketAcceptsUnauthenticatedRequest() {
         TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
+        AdmissionRejectionCooldown cooldown = inactiveCooldown();
         ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
         when(tokenBucketResolver.tryConsumeAboveThreshold(REDIRECT_THRESHOLD)).thenReturn(Mono.just(Boolean.TRUE));
 
-        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
+        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, cooldown, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
         MockServerWebExchange exchange = exchangeForGet(SEATS_PATH);
         when(chain.filter(exchange)).thenReturn(Mono.empty());
@@ -57,10 +61,11 @@ class ApiGatewayApplicationTests {
     @Test
     void queuesUnauthenticatedRequestWhenAdmissionBucketRejectsRequest() throws Exception {
         TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
+        AdmissionRejectionCooldown cooldown = inactiveCooldown();
         ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
         when(tokenBucketResolver.tryConsumeAboveThreshold(REDIRECT_THRESHOLD)).thenReturn(Mono.just(Boolean.FALSE));
 
-        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
+        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, cooldown, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
         MockServerWebExchange exchange = exchangeForGet(SEATS_PATH + "?concertId=1");
 
@@ -74,15 +79,70 @@ class ApiGatewayApplicationTests {
                 queryParams.getFirst("requestedUri"),
                 StandardCharsets.UTF_8
         )).isEqualTo("/api/v1/concerts/seats?concertId=1");
+        verify(cooldown).start();
+    }
+
+    @Test
+    void queuesWithoutAdmissionBucketLookupWhenCooldownIsActive() {
+        TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
+        AdmissionRejectionCooldown cooldown = mock(AdmissionRejectionCooldown.class);
+        ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
+        when(cooldown.isActive()).thenReturn(false, true);
+        when(tokenBucketResolver.tryConsumeAboveThreshold(REDIRECT_THRESHOLD)).thenReturn(Mono.just(Boolean.FALSE));
+
+        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, cooldown, jwtDecoder);
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        MockServerWebExchange firstExchange = exchangeForGet(SEATS_PATH);
+        MockServerWebExchange secondExchange = exchangeForGet(SEATS_PATH);
+
+        StepVerifier.create(filterFactory.apply(config()).filter(firstExchange, chain))
+                .verifyComplete();
+        StepVerifier.create(filterFactory.apply(config()).filter(secondExchange, chain))
+                .verifyComplete();
+
+        verify(chain, never()).filter(firstExchange);
+        verify(chain, never()).filter(secondExchange);
+        verify(tokenBucketResolver, times(1)).tryConsumeAboveThreshold(REDIRECT_THRESHOLD);
+        verify(cooldown, times(2)).isActive();
+        verify(cooldown).start();
+        assertQueuedResponse(firstExchange);
+        assertQueuedResponse(secondExchange);
+    }
+
+    @Test
+    void retriesAdmissionBucketLookupAfterCooldownExpires() {
+        TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
+        AdmissionRejectionCooldown cooldown = mock(AdmissionRejectionCooldown.class);
+        ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
+        when(cooldown.isActive()).thenReturn(false, false);
+        when(tokenBucketResolver.tryConsumeAboveThreshold(REDIRECT_THRESHOLD))
+                .thenReturn(Mono.just(Boolean.FALSE), Mono.just(Boolean.TRUE));
+
+        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, cooldown, jwtDecoder);
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        MockServerWebExchange firstExchange = exchangeForGet(SEATS_PATH);
+        MockServerWebExchange secondExchange = exchangeForGet(SEATS_PATH);
+        when(chain.filter(secondExchange)).thenReturn(Mono.empty());
+
+        StepVerifier.create(filterFactory.apply(config()).filter(firstExchange, chain))
+                .verifyComplete();
+        StepVerifier.create(filterFactory.apply(config()).filter(secondExchange, chain))
+                .verifyComplete();
+
+        verify(chain).filter(secondExchange);
+        verify(tokenBucketResolver, times(2)).tryConsumeAboveThreshold(REDIRECT_THRESHOLD);
+        verify(cooldown).start();
+        assertQueuedResponse(firstExchange);
     }
 
     @Test
     void queuesRequestWhenBearerTokenIsInvalid() {
         TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
+        AdmissionRejectionCooldown cooldown = mock(AdmissionRejectionCooldown.class);
         ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
         when(jwtDecoder.decode(anyString())).thenReturn(Mono.error(new BadJwtException("invalid")));
 
-        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
+        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, cooldown, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
         MockServerWebExchange exchange = exchangeForGetWithBearer("broken-token");
 
@@ -91,12 +151,14 @@ class ApiGatewayApplicationTests {
 
         verify(chain, never()).filter(exchange);
         verify(tokenBucketResolver, never()).tryConsumeAboveThreshold(REDIRECT_THRESHOLD);
+        verifyNoInteractions(cooldown);
         assertQueuedResponse(exchange);
     }
 
     @Test
     void forwardsRequestWhenBearerTokenIsValid() {
         TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
+        AdmissionRejectionCooldown cooldown = mock(AdmissionRejectionCooldown.class);
         ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
         when(jwtDecoder.decode("valid-token")).thenReturn(Mono.just(Jwt.withTokenValue("valid-token")
                 .header("alg", "RS256")
@@ -105,7 +167,7 @@ class ApiGatewayApplicationTests {
                 .expiresAt(Instant.now().plusSeconds(60))
                 .build()));
 
-        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
+        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, cooldown, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
         MockServerWebExchange exchange = exchangeForGetWithBearer("valid-token");
         when(chain.filter(exchange)).thenReturn(Mono.empty());
@@ -115,13 +177,21 @@ class ApiGatewayApplicationTests {
 
         verify(chain).filter(exchange);
         verify(tokenBucketResolver, never()).tryConsumeAboveThreshold(REDIRECT_THRESHOLD);
+        verifyNoInteractions(cooldown);
     }
 
     private RateLimiterGatewayFilterFactory filterFactory(
             TokenBucketResolver tokenBucketResolver,
+            AdmissionRejectionCooldown cooldown,
             ReactiveJwtDecoder jwtDecoder
     ) {
-        return new RateLimiterGatewayFilterFactory(tokenBucketResolver, jwtDecoder, true, REDIRECT_THRESHOLD);
+        return new RateLimiterGatewayFilterFactory(tokenBucketResolver, cooldown, jwtDecoder, true, REDIRECT_THRESHOLD);
+    }
+
+    private AdmissionRejectionCooldown inactiveCooldown() {
+        AdmissionRejectionCooldown cooldown = mock(AdmissionRejectionCooldown.class);
+        when(cooldown.isActive()).thenReturn(Boolean.FALSE);
+        return cooldown;
     }
 
     private RateLimiterGatewayFilterFactory.Config config() {
