@@ -1,0 +1,133 @@
+.queue-page {
+  width: 100%;
+  min-height: 100vh;
+  padding: 72px 24px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.queue-page__header {
+  margin-bottom: 32px;
+}
+
+.queue-page__header p {
+  margin-bottom: 8px;
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.queue-page__header h1 {
+  margin: 0 0 12px;
+  font-size: 36px;
+}
+
+.queue-page__header span {
+  color: #6b7280;
+}
+
+.queue-card {
+  width: min(460px, 100%);
+  margin: 0 auto;
+  padding: 40px 32px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-sizing: border-box;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 8%);
+}
+
+.queue-card__spinner {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 28px;
+  border: 4px solid #dbeafe;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: queue-spin 900ms linear infinite;
+}
+
+.queue-card__rank {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.queue-card__rank span {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.queue-card__rank strong {
+  color: #1d4ed8;
+  font-size: 48px;
+  line-height: 1;
+}
+
+.queue-card__message {
+  color: #4b5563;
+}
+
+.queue-card__message--allowed {
+  color: #166534;
+}
+
+.queue-card__message--expired,
+.queue-card__message--error {
+  color: #b91c1c;
+}
+
+.queue-card__retry-link {
+  display: inline-flex;
+  margin-top: 24px;
+  padding: 10px 16px;
+  border-radius: 6px;
+  color: #ffffff;
+  background: #2563eb;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.queue-card__retry-link:hover {
+  background: #1d4ed8;
+}
+
+.queue-card__retry-link:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 30%);
+  outline-offset: 3px;
+}
+
+@keyframes queue-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .queue-card {
+    border-color: #374151;
+    background: #1f2937;
+  }
+}
+
+@media (max-width: 600px) {
+  .queue-page {
+    padding: 48px 16px;
+  }
+
+  .queue-page__header h1 {
+    font-size: 30px;
+  }
+
+  .queue-card {
+    padding: 32px 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .queue-card__spinner {
+    animation: none;
+  }
+}

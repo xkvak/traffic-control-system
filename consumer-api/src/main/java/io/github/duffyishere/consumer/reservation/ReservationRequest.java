@@ -1,6 +1,6 @@
 package io.github.duffyishere.consumer.reservation;
 
 public record ReservationRequest(
-    Long userId,
-    Long seatId
+        String bookerName,
+        Long seatId
 ) {}

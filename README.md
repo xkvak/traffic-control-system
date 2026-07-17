@@ -66,7 +66,7 @@ GET  /.well-known/openid-configuration
 
 ```json
 {
-  "userId": 123,
+  "bookerName": "홍길동",
   "seatId": 10
 }
 ```

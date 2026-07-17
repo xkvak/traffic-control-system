@@ -38,6 +38,7 @@ class ApiGatewayApplicationTests {
 
     private static final long REDIRECT_THRESHOLD = 2L;
     private static final String SEATS_PATH = "/api/v1/concerts/seats";
+    private static final String QUEUE_CLIENT_REDIRECT_URL = "http://localhost:5173/queue";
 
     @Test
     void allowsDirectAccessWhenAdmissionBucketAcceptsUnauthenticatedRequest() {
@@ -77,7 +78,12 @@ class ApiGatewayApplicationTests {
                 .verifyComplete();
 
         verify(chain, never()).filter(exchange);
-        var queryParams = queuePageQueryParams(exchange);
+        var queuePageUri = queuePageUri(exchange);
+        assertThat(queuePageUri.getScheme()).isEqualTo("http");
+        assertThat(queuePageUri.getHost()).isEqualTo("localhost");
+        assertThat(queuePageUri.getPort()).isEqualTo(5173);
+        assertThat(queuePageUri.getPath()).isEqualTo("/queue");
+        var queryParams = queuePageUri.getQueryParams();
         assertThat(queryParams.getFirst("requestId")).isNotBlank();
         assertThat(org.springframework.web.util.UriUtils.decode(
                 queryParams.getFirst("requestedUri"),
@@ -242,7 +248,15 @@ class ApiGatewayApplicationTests {
             AdmissionCheckGate checkGate,
             ReactiveJwtDecoder jwtDecoder
     ) {
-        return new RateLimiterGatewayFilterFactory(tokenBucketResolver, cooldown, checkGate, jwtDecoder, true, REDIRECT_THRESHOLD);
+        return new RateLimiterGatewayFilterFactory(
+                tokenBucketResolver,
+                cooldown,
+                checkGate,
+                jwtDecoder,
+                true,
+                REDIRECT_THRESHOLD,
+                QUEUE_CLIENT_REDIRECT_URL
+        );
     }
 
     private AdmissionRejectionCooldown inactiveCooldown() {
@@ -277,10 +291,9 @@ class ApiGatewayApplicationTests {
         assertThat(extractJsonValue(queuePayload(exchange), "status")).isEqualTo("QUEUED");
     }
 
-    private org.springframework.util.MultiValueMap<String, String> queuePageQueryParams(MockServerWebExchange exchange) {
+    private org.springframework.web.util.UriComponents queuePageUri(MockServerWebExchange exchange) {
         return UriComponentsBuilder.fromUriString(extractJsonValue(queuePayload(exchange), "queuePagePath"))
-                .build()
-                .getQueryParams();
+                .build();
     }
 
     private String queuePayload(MockServerWebExchange exchange) {
