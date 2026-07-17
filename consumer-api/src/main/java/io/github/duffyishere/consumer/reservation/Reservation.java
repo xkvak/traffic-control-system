@@ -18,7 +18,10 @@ public class Reservation {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private Long userId;
+
+    @Column(name = "booker_name", length = 100)
+    private String bookerName;
+
     private LocalDateTime reservedDate;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -26,8 +29,8 @@ public class Reservation {
     private Seat seat;
 
     @Builder
-    public Reservation(Long userId, Seat seat) {
-        this.userId = userId;
+    public Reservation(String bookerName, Seat seat) {
+        this.bookerName = bookerName;
         this.seat = seat;
         this.reservedDate = LocalDateTime.now();
     }
