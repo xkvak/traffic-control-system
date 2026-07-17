@@ -20,6 +20,10 @@ rate-limiter:
     rejection-cooldown-millis: ${ADMISSION_BUCKET_REJECTION_COOLDOWN_MILLIS:-1}
     max-in-flight-checks: ${ADMISSION_BUCKET_MAX_IN_FLIGHT_CHECKS:100}
 
+queue:
+  client:
+    redirect-url: ${QUEUE_CLIENT_REDIRECT_URL:http://localhost:5173/queue}
+
 ---
 server:
   port: 8080

@@ -34,7 +34,6 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     private static final String CURRENT_PAGE_URI_PARAM = "currentPageUri";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String QUEUE_STATUS = "QUEUED";
-    private static final String QUEUE_PAGE_PATH = "/queue";
     private static final String QUEUE_SSE_PATH = "/turnstile/queue/events";
 
     private final TokenBucketResolver tokenBucketResolver;
@@ -43,6 +42,7 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     private final ReactiveJwtDecoder jwtDecoder;
     private final boolean rateLimiterEnabled;
     private final long redirectThreshold;
+    private final String queueClientRedirectUrl;
 
     public RateLimiterGatewayFilterFactory(
             TokenBucketResolver tokenBucketResolver,
@@ -50,7 +50,8 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
             AdmissionCheckGate admissionCheckGate,
             ReactiveJwtDecoder jwtDecoder,
             @Value("${rate-limiter.enabled:true}") boolean rateLimiterEnabled,
-            @Value("${rate-limiter.bucket.redirect-threshold}") long redirectThreshold
+            @Value("${rate-limiter.bucket.redirect-threshold}") long redirectThreshold,
+            @Value("${queue.client.redirect-url}") String queueClientRedirectUrl
     ) {
         super(Config.class);
         this.tokenBucketResolver = tokenBucketResolver;
@@ -59,6 +60,7 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
         this.jwtDecoder = jwtDecoder;
         this.rateLimiterEnabled = rateLimiterEnabled;
         this.redirectThreshold = redirectThreshold;
+        this.queueClientRedirectUrl = queueClientRedirectUrl;
     }
 
     @Override
@@ -122,8 +124,8 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
                 QUEUE_STATUS,
                 requestId,
                 requestedUri,
-                buildQueuePath(QUEUE_PAGE_PATH, requestId, requestedUri),
-                buildQueuePath(QUEUE_SSE_PATH, requestId, requestedUri)
+                buildQueueUrl(queueClientRedirectUrl, requestId, requestedUri),
+                buildQueueUrl(QUEUE_SSE_PATH, requestId, requestedUri)
         );
 
         byte[] body = serializeQueueResponse(payload);
@@ -136,8 +138,8 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
         return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
     }
 
-    private String buildQueuePath(String basePath, String requestId, String requestedUri) {
-        UriComponentsBuilder locationBuilder = UriComponentsBuilder.fromPath(basePath)
+    private String buildQueueUrl(String baseUrl, String requestId, String requestedUri) {
+        UriComponentsBuilder locationBuilder = UriComponentsBuilder.fromUriString(baseUrl)
                 .queryParam("requestId", requestId);
 
         if (requestedUri != null) {
