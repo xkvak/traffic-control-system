@@ -3,6 +3,7 @@ package io.github.duffyishere.turnstile.queue;
 import com.nimbusds.jose.JOSEException;
 import io.github.duffyishere.turnstile.common.TokenBucketResolver;
 import io.github.duffyishere.turnstile.common.TokenProvider;
+import io.github.duffyishere.turnstile.metrics.TurnstileMetrics;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,7 @@ public class QueueService {
     private final TokenBucketResolver tokenBucketResolver;
     private final TokenProvider tokenProvider;
     private final QueueNotificationBus queueNotificationBus;
+    private final TurnstileMetrics turnstileMetrics;
 
     @Value("${turnstile.queue.dispatch-interval-millis:10}")
     private long dispatchIntervalMillis;
@@ -85,6 +87,8 @@ public class QueueService {
 
     Mono<Void> dispatchOnce() {
         return queueRepository.size(QUEUE_NAME)
+                .doOnNext(turnstileMetrics::recordQueueSize)
+                .doOnError(ignored -> turnstileMetrics.markQueueSizeUnavailable())
                 .map(this::resolveDispatchBatchSize)
                 .filter(this::hasWork)
                 .flatMap(this::dispatchBatch)

@@ -2,6 +2,7 @@ package io.github.duffyishere.turnstile.queue;
 
 import io.github.duffyishere.turnstile.common.TokenBucketResolver;
 import io.github.duffyishere.turnstile.common.TokenProvider;
+import io.github.duffyishere.turnstile.metrics.TurnstileMetrics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,11 +37,20 @@ class QueueServiceTest {
     @Mock
     private QueueNotificationBus queueNotificationBus;
 
+    @Mock
+    private TurnstileMetrics turnstileMetrics;
+
     private QueueService queueService;
 
     @BeforeEach
     void setUp() {
-        queueService = new QueueService(queueRepository, tokenBucketResolver, tokenProvider, queueNotificationBus);
+        queueService = new QueueService(
+                queueRepository,
+                tokenBucketResolver,
+                tokenProvider,
+                queueNotificationBus,
+                turnstileMetrics
+        );
         ReflectionTestUtils.setField(queueService, "dispatchMaxBatch", 10L);
         ReflectionTestUtils.setField(queueService, "grantTtl", Duration.ofSeconds(60));
     }
@@ -67,6 +77,7 @@ class QueueServiceTest {
         verify(queueNotificationBus).publishAllowed("req-1", "token-1");
         verify(queueNotificationBus).publishAllowed("req-2", "token-2");
         verify(tokenBucketResolver).addTokens(1L);
+        verify(turnstileMetrics).recordQueueSize(5L);
     }
 
     @Test
@@ -78,6 +89,7 @@ class QueueServiceTest {
 
         verify(tokenBucketResolver, never()).consumeAvailable(anyLong());
         verify(queueRepository, never()).popHead(any(), anyLong());
+        verify(turnstileMetrics).recordQueueSize(0L);
     }
 
     @Test

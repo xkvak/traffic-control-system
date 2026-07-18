@@ -5,7 +5,6 @@ import {
   getParameter,
   global,
   jmesPath,
-  jsonPath,
   regex,
   scenario,
   simulation,
@@ -14,9 +13,9 @@ import {
 import { http, sse, status } from "@gatling.io/http";
 
 const baseUrl = getParameter("baseUrl", "http://localhost:8080");
-const usersPerSec = Number(getParameter("usersPerSec", "100"));
+const usersPerSec = Number(getParameter("usersPerSec", "200"));
 const durationSeconds = Number(getParameter("durationSeconds", "60"));
-const queueTimeoutSeconds = Number(getParameter("queueTimeoutSeconds", "90"));
+const queueTimeoutSeconds = Number(getParameter("queueTimeoutSeconds", "120"));
 const maxFailurePercent = Number(getParameter("maxFailurePercent", "0"));
 
 const SEATS_API = "/api/v1/concerts/seats";
@@ -73,8 +72,10 @@ function waitForQueue(name, streamName, queuePathKey) {
 /*
  * 좌석 조회
  *
- * 200: AVAILABLE 좌석 ID 목록 저장
- * 202: 응답 본문을 저장한 뒤 대기열 분기에서 사용
+ * 200: 좌석 목록 응답 본문 저장
+ * 202: 대기열 응답 본문 저장
+ *
+ * 대기열에 걸렸다면 재조회 응답이 seatResponse를 덮어쓴다.
  */
 const lookupSeats = http("Seat lookup")
   .get(SEATS_API)
@@ -82,11 +83,6 @@ const lookupSeats = http("Seat lookup")
   .check(
     status().in(200, 202).saveAs("seatStatus"),
     bodyString().saveAs("seatResponse"),
-    jsonPath("$[?(@.status == 'AVAILABLE')].id")
-      .ofLong()
-      .findAll()
-      .optional()
-      .saveAs("availableSeatIds"),
   );
 
 /*
@@ -97,13 +93,41 @@ const retrySeatLookup = http("Seat lookup after queue")
   .get(SEATS_API)
   .header(CURRENT_PAGE_HEADER, "/")
   .header("Authorization", authorizationHeader)
-  .check(
-    status().is(200),
-    jsonPath("$[?(@.status == 'AVAILABLE')].id")
-      .ofLong()
-      .findAll()
-      .saveAs("availableSeatIds"),
-  );
+  .check(status().is(200), bodyString().saveAs("seatResponse"));
+
+/*
+ * 최종 좌석 조회 응답을 분석한다.
+ *
+ * AVAILABLE 좌석이 없는 정상 응답은 soldOut=true로 저장한다.
+ * 잘못된 JSON이나 좌석 배열이 아닌 응답은 실제 실패로 처리한다.
+ */
+const extractSeatAvailability = exec((session) => {
+  try {
+    const seats = JSON.parse(session.get("seatResponse"));
+
+    if (!Array.isArray(seats)) {
+      return session.markAsFailed();
+    }
+
+    const availableSeatIds = seats
+      .filter((seat) => seat?.status === "AVAILABLE")
+      .map((seat) => seat.id);
+
+    const hasInvalidSeatId = availableSeatIds.some(
+      (seatId) => !Number.isInteger(seatId),
+    );
+
+    if (hasInvalidSeatId) {
+      return session.markAsFailed();
+    }
+
+    return session
+      .set("availableSeatIds", availableSeatIds)
+      .set("soldOut", availableSeatIds.length === 0);
+  } catch {
+    return session.markAsFailed();
+  }
+});
 
 /*
  * 조회된 AVAILABLE 좌석 중 하나를 선택한다.
@@ -193,6 +217,12 @@ const seatReservationScenario = scenario("Seat reservation")
     retrySeatLookup,
   )
   .exitHereIfFailed()
+
+  .exec(extractSeatAvailability)
+  .exitHereIfFailed()
+
+  // AVAILABLE 좌석이 없으면 KO 없이 해당 VU만 정상 종료한다.
+  .exitHereIf((session) => session.get("soldOut") === true)
 
   .exec(chooseSeat)
   .exitHereIfFailed()
