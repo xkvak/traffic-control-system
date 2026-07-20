@@ -1,6 +1,9 @@
 package io.github.duffyishere.turnstile.common;
 
-import com.nimbusds.jose.*;
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.KeyUse;
@@ -41,6 +44,7 @@ public class TokenProvider {
     public String generateToken(String requestId) throws JOSEException {
         Date issuedAt = new Date();
         Date expiresAt = new Date(issuedAt.getTime() + (tokenTtlSeconds * 1000));
+        
         JWTClaimsSet claimsSet = new JWTClaimsSet.Builder()
                 .subject("turnstile")
                 .claim("requestId", requestId)
@@ -48,8 +52,14 @@ public class TokenProvider {
                 .expirationTime(expiresAt)
                 .build();
 
-        SignedJWT signedJWT = new SignedJWT(new JWSHeader(JWSAlgorithm.RS256), claimsSet);
+        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.RS256)
+                .keyID(rsaJWK.getKeyID())
+                .type(JOSEObjectType.JWT)
+                .build();
+
+        SignedJWT signedJWT = new SignedJWT(header, claimsSet);
         signedJWT.sign(new RSASSASigner(rsaJWK));
+
         return signedJWT.serialize();
     }
 }

@@ -2,10 +2,11 @@ package io.github.duffyishere.turnstile.queue;
 
 import io.github.duffyishere.turnstile.common.TokenBucketResolver;
 import io.github.duffyishere.turnstile.common.TokenProvider;
-import io.github.duffyishere.turnstile.metrics.TurnstileMetrics;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -14,11 +15,15 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,12 +39,6 @@ class QueueServiceTest {
     @Mock
     private TokenProvider tokenProvider;
 
-    @Mock
-    private QueueNotificationBus queueNotificationBus;
-
-    @Mock
-    private TurnstileMetrics turnstileMetrics;
-
     private QueueService queueService;
 
     @BeforeEach
@@ -47,68 +46,131 @@ class QueueServiceTest {
         queueService = new QueueService(
                 queueRepository,
                 tokenBucketResolver,
-                tokenProvider,
-                queueNotificationBus,
-                turnstileMetrics
+                tokenProvider
         );
+        ReflectionTestUtils.setField(queueService, "dispatchIntervalMillis", 10L);
         ReflectionTestUtils.setField(queueService, "dispatchMaxBatch", 10L);
-        ReflectionTestUtils.setField(queueService, "grantTtl", Duration.ofSeconds(60));
+    }
+
+    @AfterEach
+    void tearDown() {
+        queueService.stopDispatcher();
     }
 
     @Test
-    void dispatchOnceGrantsBatchAndRefundsUnusedTokens() throws Exception {
-        when(queueRepository.size("queue")).thenReturn(Mono.just(5L));
-        when(tokenBucketResolver.consumeAvailable(5L)).thenReturn(Mono.just(3L));
-        when(queueRepository.popHead("queue", 3L)).thenReturn(Flux.just("req-1", "req-2"));
-        when(tokenProvider.generateToken("req-1")).thenReturn("token-1");
-        when(tokenProvider.generateToken("req-2")).thenReturn("token-2");
-        when(queueRepository.saveGrant(eq("req-1"), eq("token-1"), any(Duration.class))).thenReturn(Mono.empty());
-        when(queueRepository.saveGrant(eq("req-2"), eq("token-2"), any(Duration.class))).thenReturn(Mono.empty());
-        when(queueNotificationBus.publishAllowed("req-1", "token-1")).thenReturn(Mono.empty());
-        when(queueNotificationBus.publishAllowed("req-2", "token-2")).thenReturn(Mono.empty());
-        when(tokenBucketResolver.addTokens(1L)).thenReturn(Mono.empty());
+    void subscribeQueueRegistersGeneratedIdEmitsWaitingAndRemovesOnCancel() {
+        when(queueRepository.register(eq("queue"), anyString())).thenReturn(Mono.just(true));
+        when(queueRepository.getRank(eq("queue"), anyString())).thenReturn(Mono.just(2L));
+        when(queueRepository.remove(eq("queue"), anyString())).thenReturn(Mono.just(1L));
 
-        StepVerifier.create(queueService.dispatchOnce())
-                .verifyComplete();
-
-        verify(queueRepository).popHead("queue", 3L);
-        verify(queueRepository).saveGrant("req-1", "token-1", Duration.ofSeconds(60));
-        verify(queueRepository).saveGrant("req-2", "token-2", Duration.ofSeconds(60));
-        verify(queueNotificationBus).publishAllowed("req-1", "token-1");
-        verify(queueNotificationBus).publishAllowed("req-2", "token-2");
-        verify(tokenBucketResolver).addTokens(1L);
-        verify(turnstileMetrics).recordQueueSize(5L);
-    }
-
-    @Test
-    void dispatchOnceDoesNothingWhenQueueIsEmpty() {
-        when(queueRepository.size("queue")).thenReturn(Mono.just(0L));
-
-        StepVerifier.create(queueService.dispatchOnce())
-                .verifyComplete();
-
-        verify(tokenBucketResolver, never()).consumeAvailable(anyLong());
-        verify(queueRepository, never()).popHead(any(), anyLong());
-        verify(turnstileMetrics).recordQueueSize(0L);
-    }
-
-    @Test
-    void subscribeQueueKeepsStreamAliveWhenRefreshTicksOutpaceDemand() {
-        ReflectionTestUtils.setField(queueService, "statusRefreshInterval", Duration.ofSeconds(5));
-
-        when(queueRepository.register("queue", "req-1")).thenReturn(Mono.empty());
-        when(queueRepository.remove("queue", "req-1")).thenReturn(Mono.empty());
-        when(queueRepository.getGrant("req-1")).thenReturn(Mono.empty());
-        when(queueRepository.getRank("queue", "req-1")).thenReturn(Mono.just(0L));
-        when(queueNotificationBus.notificationsFor("req-1")).thenReturn(Flux.never());
-
-        StepVerifier.withVirtualTime(() -> queueService.subscribeQueue("req-1", "/concerts"), 1)
-                .expectSubscription()
-                .expectNextMatches(response -> "WAITING".equals(response.status()) && response.rank() == 1L)
-                .thenAwait(Duration.ofSeconds(20))
+        StepVerifier.create(queueService.subscribeQueue("/concerts"))
+                .expectNextMatches(response ->
+                        "WAITING".equals(response.status())
+                                && response.rank() == 3L
+                                && response.token() == null
+                )
                 .thenCancel()
                 .verify();
 
-        verify(queueRepository).remove("queue", "req-1");
+        ArgumentCaptor<String> requestIdCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queueRepository).register(eq("queue"), requestIdCaptor.capture());
+
+        String requestId = requestIdCaptor.getValue();
+        assertThat(UUID.fromString(requestId)).isNotNull();
+        verify(queueRepository).remove("queue", requestId);
+    }
+
+    @Test
+    void subscribeQueueCreatesANewRequestIdForEveryConnection() {
+        when(queueRepository.register(eq("queue"), anyString())).thenReturn(Mono.just(true));
+        when(queueRepository.getRank(eq("queue"), anyString())).thenReturn(Mono.just(0L));
+        when(queueRepository.remove(eq("queue"), anyString())).thenReturn(Mono.just(1L));
+
+        StepVerifier.create(queueService.subscribeQueue("/concerts"))
+                .expectNextCount(1)
+                .thenCancel()
+                .verify();
+
+        StepVerifier.create(queueService.subscribeQueue("/concerts"))
+                .expectNextCount(1)
+                .thenCancel()
+                .verify();
+
+        ArgumentCaptor<String> requestIdCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queueRepository, times(2)).register(eq("queue"), requestIdCaptor.capture());
+
+        List<String> requestIds = requestIdCaptor.getAllValues();
+        assertThat(requestIds).hasSize(2);
+        assertThat(requestIds.get(0)).isNotEqualTo(requestIds.get(1));
+    }
+
+    @Test
+    void subscribeQueueCleansUpWhenRegistrationFails() {
+        AtomicReference<String> registeredRequestId = new AtomicReference<>();
+
+        when(queueRepository.register(eq("queue"), anyString())).thenAnswer(invocation -> {
+            registeredRequestId.set(invocation.getArgument(1));
+            return Mono.error(new IllegalStateException("Redis unavailable"));
+        });
+        when(queueRepository.getRank(eq("queue"), anyString())).thenReturn(Mono.never());
+        when(queueRepository.remove(eq("queue"), anyString())).thenReturn(Mono.just(0L));
+
+        StepVerifier.create(queueService.subscribeQueue("/concerts"))
+                .expectErrorMatches(error ->
+                        error instanceof IllegalStateException
+                                && "Redis unavailable".equals(error.getMessage())
+                )
+                .verify();
+
+        verify(queueRepository).remove("queue", registeredRequestId.get());
+    }
+
+    @Test
+    void dispatcherEmitsAllowedAndRefundsUnusedTokens() throws Exception {
+        AtomicReference<String> registeredRequestId = new AtomicReference<>();
+        AtomicBoolean rankRead = new AtomicBoolean(false);
+        AtomicBoolean popped = new AtomicBoolean(false);
+
+        when(queueRepository.register(eq("queue"), anyString())).thenAnswer(invocation -> {
+            registeredRequestId.set(invocation.getArgument(1));
+            return Mono.just(true);
+        });
+        when(queueRepository.getRank(eq("queue"), anyString())).thenAnswer(invocation -> {
+            rankRead.set(true);
+            return Mono.just(0L);
+        });
+        when(queueRepository.remove(eq("queue"), anyString())).thenReturn(Mono.just(0L));
+        when(queueRepository.size("queue")).thenAnswer(invocation ->
+                Mono.just(rankRead.get() && !popped.get() ? 2L : 0L)
+        );
+        when(tokenBucketResolver.consumeAvailable(2L)).thenReturn(Mono.just(2L));
+        when(queueRepository.popHead("queue", 2L)).thenAnswer(invocation -> {
+            popped.set(true);
+            return Flux.just(registeredRequestId.get());
+        });
+        when(tokenProvider.generateToken(anyString())).thenReturn("token-1");
+        when(tokenBucketResolver.addTokens(1L)).thenReturn(Mono.empty());
+
+        StepVerifier.withVirtualTime(() -> {
+                    queueService.startDispatcher();
+                    return queueService.subscribeQueue("/concerts");
+                })
+                .expectSubscription()
+                .expectNextMatches(response ->
+                        "WAITING".equals(response.status())
+                                && response.rank() == 1L
+                )
+                .thenAwait(Duration.ofMillis(20))
+                .expectNextMatches(response ->
+                        QueueNotification.STATUS_ALLOWED.equals(response.status())
+                                && response.rank() == 0L
+                                && "token-1".equals(response.token())
+                                && "/concerts".equals(response.requestedUri())
+                )
+                .verifyComplete();
+
+        verify(tokenProvider).generateToken(registeredRequestId.get());
+        verify(tokenBucketResolver).addTokens(1L);
+        verify(queueRepository).remove("queue", registeredRequestId.get());
     }
 }

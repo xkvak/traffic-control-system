@@ -6,13 +6,10 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.Duration;
-
 @Repository
 @RequiredArgsConstructor
 public class RedisQueueRepository implements QueueRepository {
 
-    private static final String GRANT_PREFIX = "queue:grant:";
     private static final String SEQUENCE_PREFIX = "queue:sequence:";
 
     private final ReactiveRedisTemplate<String, String> redisTemplate;
@@ -53,28 +50,12 @@ public class RedisQueueRepository implements QueueRepository {
                 .map(tuple -> tuple.getValue());
     }
 
-    @Override
-    public Mono<Void> saveGrant(String requestId, String token, Duration ttl) {
-        return redisTemplate.opsForValue()
-                .set(grantKey(requestId), token, ttl)
-                .then();
-    }
-
-    @Override
-    public Mono<String> getGrant(String requestId) {
-        return redisTemplate.opsForValue().get(grantKey(requestId));
-    }
-
     private Mono<Boolean> isRegistered(String queueName, String requestId) {
         return redisTemplate.opsForZSet().score(queueName, requestId).hasElement();
     }
 
     private Mono<Long> nextSequence(String queueName) {
         return redisTemplate.opsForValue().increment(sequenceKey(queueName));
-    }
-
-    private String grantKey(String requestId) {
-        return GRANT_PREFIX + requestId;
     }
 
     private String sequenceKey(String queueName) {
