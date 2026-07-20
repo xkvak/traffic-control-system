@@ -13,8 +13,12 @@ import {
 import { http, sse, status } from "@gatling.io/http";
 
 const baseUrl = getParameter("baseUrl", "http://localhost:8080");
-const usersPerSec = Number(getParameter("usersPerSec", "200"));
-const durationSeconds = Number(getParameter("durationSeconds", "60"));
+const turnstileBaseUrl = getParameter(
+  "turnstileBaseUrl",
+  "http://localhost:8083",
+);
+const usersPerSec = Number(getParameter("usersPerSec", "500"));
+const durationSeconds = Number(getParameter("durationSeconds", "300"));
 const queueTimeoutSeconds = Number(getParameter("queueTimeoutSeconds", "120"));
 const maxFailurePercent = Number(getParameter("maxFailurePercent", "0"));
 
@@ -37,7 +41,17 @@ function saveQueuePath(responseKey, queuePathKey) {
         return session.markAsFailed();
       }
 
-      return session.set(queuePathKey, response.queueSsePath);
+      const isAbsoluteUrl =
+        response.queueSsePath.startsWith("http://") ||
+        response.queueSsePath.startsWith("https://");
+
+      const queueSseUrl = isAbsoluteUrl
+        ? response.queueSsePath
+        : `${turnstileBaseUrl.replace(/\/$/, "")}${
+            response.queueSsePath.startsWith("/") ? "" : "/"
+          }${response.queueSsePath}`;
+
+      return session.set(queuePathKey, queueSseUrl);
     } catch {
       return session.markAsFailed();
     }

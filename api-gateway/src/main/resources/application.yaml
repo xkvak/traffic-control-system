@@ -57,7 +57,7 @@ spring:
             - name: turnstile-route
               uri: http://turnstile:8080
               predicates:
-                - Path=/turnstile/**, /.well-known/openid-configuration
+                - Path=/.well-known/openid-configuration
     discovery:
       client:
         simple:
