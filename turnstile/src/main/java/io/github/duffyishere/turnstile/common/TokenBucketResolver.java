@@ -40,6 +40,10 @@ public class TokenBucketResolver {
                 .defaultIfEmpty(NO_TOKENS);
     }
 
+    public Mono<Long> getAvailableTokens() {
+        return Mono.fromFuture(() -> asyncBucket.getAvailableTokens());
+    }
+
     public Mono<Void> addTokens(long tokensToRefund) {
         if (tokensToRefund <= 0) {
             return Mono.empty();

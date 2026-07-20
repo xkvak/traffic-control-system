@@ -1,3 +1,9 @@
+management:
+  metrics:
+    distribution:
+      slo:
+        "http.server.requests": 50ms,100ms,250ms,500ms,1s,2s,5s,10s,30s,60s,90s,120s
+
 spring:
   application:
     name: turnstile
@@ -20,10 +26,12 @@ turnstile:
   token:
     ttl-seconds: ${TURNSTILE_TOKEN_TTL_SECONDS:60}
   queue:
-    dispatch-interval-millis: ${TURNSTILE_DISPATCH_INTERVAL_MILLIS:10}
+    dispatch-interval-millis: ${TURNSTILE_DISPATCH_INTERVAL_MILLIS:100}
     dispatch-max-batch: ${TURNSTILE_DISPATCH_MAX_BATCH:256}
-    status-refresh-seconds: ${TURNSTILE_STATUS_REFRESH_SECONDS:15}
     grant-ttl-seconds: ${TURNSTILE_GRANT_TTL_SECONDS:60}
+  metrics:
+    token-sample-interval: ${TURNSTILE_METRICS_TOKEN_SAMPLE_INTERVAL:5s}
+    token-sample-timeout: ${TURNSTILE_METRICS_TOKEN_SAMPLE_TIMEOUT:1s}
 
 ---
 server:

@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: traffic-control
+    orgId: 1
+    folder: Traffic Control
+    folderUid: traffic-control
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards

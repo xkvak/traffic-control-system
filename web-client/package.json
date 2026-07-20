@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@gatling.io/cli": "^3.15.103",
+    "@gatling.io/core": "^3.15.103",
+    "@gatling.io/http": "^3.15.103",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1"

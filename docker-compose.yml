@@ -2,18 +2,24 @@ services:
   turnstile:
     build: ./turnstile
     container_name: turnstile
+    restart: unless-stopped
     environment:
       ADMISSION_BUCKET_CAPACITY: ${ADMISSION_BUCKET_CAPACITY:-100}
       ADMISSION_BUCKET_REFILL_AMOUNT: ${ADMISSION_BUCKET_REFILL_AMOUNT:-100}
       ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS: ${ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS:-1}
+      MANAGEMENT_SERVER_PORT: 9091
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,prometheus
     ports:
       - "8083:8080"
     depends_on:
       redis:
         condition: service_healthy
+
+
   gateway:
     build: ./api-gateway
     container_name: gateway
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
@@ -24,6 +30,10 @@ services:
       ADMISSION_BUCKET_REDIRECT_THRESHOLD: ${ADMISSION_BUCKET_REDIRECT_THRESHOLD:-2}
       ADMISSION_BUCKET_MAX_IN_FLIGHT_CHECKS: ${ADMISSION_BUCKET_MAX_IN_FLIGHT_CHECKS:-100}
       QUEUE_CLIENT_REDIRECT_URL: ${QUEUE_CLIENT_REDIRECT_URL:-http://localhost:5173/queue}
+      MANAGEMENT_SERVER_PORT: 9091
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,prometheus
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_METRICS_ENABLED: "true"
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_HTTPCLIENT_POOL_METRICS: "true"
     depends_on:
       app1:
         condition: service_started
@@ -31,9 +41,12 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+
+
   web-client:
     build: ./web-client
     container_name: web-client
+    restart: unless-stopped
     ports:
       - "5173:5173"
     environment:
@@ -41,6 +54,8 @@ services:
     depends_on:
       gateway:
         condition: service_started
+
+
   app1:
     build: ./consumer-api
     ports:
@@ -52,7 +67,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/concert_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: root
-    restart: on-failure
+      MANAGEMENT_SERVER_PORT: 9091
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,prometheus
+    restart: unless-stopped
   app2:
     build: ./consumer-api
     ports:
@@ -64,11 +81,15 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/concert_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: root
-    restart: on-failure
+      MANAGEMENT_SERVER_PORT: 9091
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,prometheus
+    restart: unless-stopped
+
 
   mysql:
     image: mysql:8.0
     container_name: concert-mysql
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: concert_db
@@ -83,8 +104,11 @@ services:
       timeout: 3s
       retries: 20
       start_period: 20s
+
+
   redis:
     image: redis:8.6.0
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -97,3 +121,32 @@ services:
       timeout: 3s
       retries: 20
       start_period: 5s
+
+
+  prometheus:
+    image: prom/prometheus:v3.12.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+
+  grafana:
+    image: grafana/grafana:13.1.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
