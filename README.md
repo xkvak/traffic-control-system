@@ -2,7 +2,56 @@
 
 > 티켓 오픈처럼 트래픽이 순간적으로 몰리는 상황에서 서버가 감당할 수 있는 사용자만 통과시키고, 나머지는 순서대로 기다렸다가 자동으로 입장시키는 콘서트 예매 데모입니다.
 
-![flow.gif](docs/images/queue-flow.gif)
+```mermaid
+flowchart LR
+    subgraph Client["클라이언트"]
+        Browser["사용자 브라우저"]
+        Gatling["Gatling JS"]
+    end
+
+    subgraph Frontend["프론트엔드"]
+        Web["React / Vite<br/>:5173"]
+    end
+
+    subgraph GatewayLayer["게이트웨이"]
+        Gateway["Spring Cloud Gateway<br/>:8080"]
+    end
+
+    subgraph Backend["백엔드"]
+        App1["Consumer API<br/>app1"]
+        App2["Consumer API<br/>app2"]
+        Turnstile["Turnstile<br/>SSE · 대기열"]
+    end
+
+    subgraph Storage["저장소"]
+        MySQL[("MySQL")]
+        Redis[("Redis")]
+    end
+
+    subgraph Observability["모니터링"]
+        Prometheus["Prometheus"]
+        Grafana["Grafana"]
+    end
+
+    Browser --> Web
+    Web --> Gateway
+    Gatling --> Gateway
+
+    Gateway --> App1
+    Gateway --> App2
+    Gateway --> Turnstile
+    Gateway --> Redis
+
+    App1 --> MySQL
+    App2 --> MySQL
+    Turnstile --> Redis
+
+    Gateway -.-> Prometheus
+    App1 -.-> Prometheus
+    App2 -.-> Prometheus
+    Turnstile -.-> Prometheus
+    Prometheus --> Grafana
+```
 
 ## 왜 필요한가요?
 
@@ -50,6 +99,8 @@ docker compose ps
 - 현재 대기 순번이 표시됩니다.
 - 별도의 새로고침은 필요하지 않습니다.
 - 입장이 허용되면 원래 페이지로 자동 복귀합니다.
+
+![flow.gif](docs/images/queue-flow.gif)
 
 ### 3. 처리 상황을 대시보드에서 확인할 수 있습니다
 
