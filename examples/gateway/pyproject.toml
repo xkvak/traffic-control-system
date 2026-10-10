@@ -1,0 +1,15 @@
+[project]
+name = "gateway"
+version = "0.1.0"
+description = "Example API gateway that admits only requests carrying a turnstile queue token"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
+    "pyjwt[crypto]>=2.8",
+    "prometheus-client",
+]
+
+[dependency-groups]
+dev = ["pytest", "httpx2"]
