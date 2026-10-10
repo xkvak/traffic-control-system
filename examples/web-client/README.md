@@ -5,20 +5,18 @@
 ## 실행
 
 ```bash
-cd web-client
+cd examples/web-client
 npm install
 npm run dev
 ```
 
 기본 개발 서버는 `http://localhost:5173` 입니다.
 
-## 기능
+## 동작
 
-- API Gateway URL 입력
-- `GET /api/v1/concerts/seats` 호출
-- 좌석 목록 렌더링
-
-## 참고
-
-- 이 프로젝트는 API 호출 대상을 `api-gateway`로 가정합니다.
-- 예시 기본값: `http://localhost:8080`
+- 대기열(`/queue/*`)과 API(`/api/*`)를 Vite 개발 서버가 각각 Turnstile과 Gateway로 프록시합니다.
+  - `VITE_TURNSTILE_PROXY_TARGET` (기본 `http://localhost:8083`)
+  - `VITE_API_PROXY_TARGET` (기본 `http://localhost:8080`)
+- 대기열과 API를 잇는 로직은 `src/services/apiClient.ts`에 있습니다.
+  - 입장 토큰이 없거나 API가 401을 주면 대기열에 진입하고, 자리가 없으면 `/waiting` 페이지에서 기다립니다.
+  - 입장한 동안 토큰을 주기적으로 연장하고, 예매를 마치면 자리를 반납합니다.

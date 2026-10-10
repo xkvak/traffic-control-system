@@ -7,7 +7,7 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<SeatPage />} />
-      <Route path="/queue" element={<QueuePage />} />
+      <Route path="/waiting" element={<QueuePage />} />
       <Route path="/reservation/:seatId" element={<ReservationPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

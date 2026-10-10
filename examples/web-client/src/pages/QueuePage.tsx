@@ -1,50 +1,39 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { saveAccessToken } from '../services/apiClient'
+import {
+  enterQueue,
+  queueStatus,
+  QueueUnavailableError,
+  saveAccessToken,
+  type QueueStatus,
+} from '../services/apiClient'
 import './QueuePage.css'
 
-type QueueStatus =
+type ViewStatus =
   | 'connecting'
   | 'waiting'
   | 'reconnecting'
   | 'allowed'
-  | 'expired'
-  | 'error'
+  | 'full'
+  | 'closed'
 
-type QueueEventPayload = {
-  status?: string
-  rank?: number
-  token?: string
-  requestedUri?: string
-}
+const MAX_BACKOFF_MS = 30_000
+const FULL_RETRY_MS = 15_000
 
-function parseQueueEvent(event: Event) {
-  if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
-    return null
-  }
-
-  try {
-    return JSON.parse(event.data) as QueueEventPayload
-  } catch {
-    return null
-  }
-}
-
-function resolveReturnPath(requestedUri: string | null | undefined) {
-  if (!requestedUri) {
+/* 다른 사이트나 API 경로로 보내지 않도록, 같은 출처의 화면 경로만 허용한다 */
+function resolveReturnPath(returnTo: string | null) {
+  if (!returnTo) {
     return '/'
   }
 
   try {
-    const resolved = new URL(requestedUri, window.location.origin)
-
-    if (resolved.origin !== window.location.origin) {
-      return '/'
-    }
+    const resolved = new URL(returnTo, window.location.origin)
 
     if (
-      resolved.pathname.startsWith('/api/') ||
-      resolved.pathname.startsWith('/turnstile/')
+      resolved.origin !== window.location.origin ||
+      ['/api/', '/queue/', '/waiting'].some((prefix) =>
+        resolved.pathname.startsWith(prefix),
+      )
     ) {
       return '/'
     }
@@ -58,107 +47,114 @@ function resolveReturnPath(requestedUri: string | null | undefined) {
 function QueuePage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [status, setStatus] = useState<QueueStatus>('connecting')
+  const [status, setStatus] = useState<ViewStatus>('connecting')
   const [rank, setRank] = useState<number | null>(null)
   const [message, setMessage] = useState('대기열 서버에 연결하고 있습니다.')
 
-  const requestId = searchParams.get('requestId')
-  const requestedUri = searchParams.get('requestedUri')
+  const returnTo = resolveReturnPath(searchParams.get('returnTo'))
 
   useEffect(() => {
-    if (!requestId) {
-      return
-    }
+    let timer: number | undefined
+    let stopped = false
+    let failures = 0
 
-    const eventUrl = new URL('/turnstile/queue/events', window.location.origin)
-    eventUrl.searchParams.set('requestId', requestId)
-
-    if (requestedUri) {
-      eventUrl.searchParams.set('requestedUri', requestedUri)
-    }
-
-    const eventSource = new EventSource(eventUrl)
-
-    eventSource.onopen = () => {
-      setStatus('connecting')
-      setMessage('대기 순번을 확인하고 있습니다.')
-    }
-
-    const handleWaiting = (event: Event) => {
-      const payload = parseQueueEvent(event)
-      const nextRank =
-        typeof payload?.rank === 'number' && payload.rank > 0
-          ? payload.rank
-          : null
-
-      setStatus('waiting')
-      setRank(nextRank)
-      setMessage(
-        nextRank
-          ? `현재 대기 순번은 ${nextRank}번입니다.`
-          : '현재 대기 순번을 확인하고 있습니다.',
-      )
-    }
-
-    const handleAllowed = (event: Event) => {
-      const payload = parseQueueEvent(event)
-
-      if (!payload?.token) {
-        setStatus('error')
-        setMessage('입장 토큰을 확인할 수 없습니다.')
-        eventSource.close()
-        return
+    const schedule = (step: () => Promise<void>, delayMs: number) => {
+      if (!stopped) {
+        timer = window.setTimeout(step, delayMs)
       }
-
-      saveAccessToken(payload.token)
-      setStatus('allowed')
-      setRank(null)
-      setMessage('입장이 허용되었습니다. 이전 페이지로 이동합니다.')
-      eventSource.close()
-      navigate(
-        resolveReturnPath(payload.requestedUri || requestedUri),
-        { replace: true },
-      )
     }
 
-    const handleExpired = () => {
-      setStatus('expired')
-      setRank(null)
-      setMessage('대기열 요청이 만료되었습니다. 다시 시도해 주세요.')
-      eventSource.close()
+    const retry = (error: unknown, step: () => Promise<void>) => {
+      failures += 1
+      const backoff =
+        Math.min(MAX_BACKOFF_MS, 1_000 * 2 ** failures) *
+        (0.8 + Math.random() * 0.4)
+      const delay =
+        error instanceof QueueUnavailableError && error.retryAfterMs
+          ? error.retryAfterMs
+          : backoff
+
+      setStatus('reconnecting')
+      setMessage('연결이 원활하지 않아 다시 시도하고 있습니다.')
+      schedule(step, delay)
     }
 
-    eventSource.addEventListener('waiting', handleWaiting)
-    eventSource.addEventListener('allowed', handleAllowed)
-    eventSource.addEventListener('expired', handleExpired)
+    const apply = (queue: QueueStatus) => {
+      failures = 0
 
-    eventSource.onerror = () => {
-      if (eventSource.readyState === EventSource.CONNECTING) {
-        setStatus('reconnecting')
-        setMessage('연결이 끊어져 다시 연결하고 있습니다.')
-        return
+      switch (queue.status) {
+        case 'ALLOWED':
+          if (queue.token) {
+            saveAccessToken(queue.token, queue.refreshAfterMs)
+          }
+          setStatus('allowed')
+          setRank(null)
+          setMessage('입장이 허용되었습니다. 이전 페이지로 이동합니다.')
+          navigate(returnTo, { replace: true })
+          return
+        case 'WAITING':
+          setStatus('waiting')
+          setRank(queue.rank ?? null)
+          setMessage(
+            queue.rank
+              ? `현재 대기 순번은 ${queue.rank}번입니다.`
+              : '현재 대기 순번을 확인하고 있습니다.',
+          )
+          schedule(poll, queue.retryAfterMs ?? 1_000)
+          return
+        case 'FULL':
+          setStatus('full')
+          setRank(null)
+          setMessage('대기 인원이 가득 찼습니다. 잠시 후 자동으로 다시 시도합니다.')
+          schedule(enter, FULL_RETRY_MS)
+          return
+        case 'CLOSED':
+          setStatus('closed')
+          setRank(null)
+          setMessage('대기열이 마감되었습니다.')
+          return
+        case 'EXPIRED':
+          schedule(enter, 0)
       }
-
-      setStatus('error')
-      setMessage('대기열 서버에 연결할 수 없습니다.')
     }
+
+    const enter = async () => {
+      try {
+        const entered = await enterQueue()
+        if (!stopped) {
+          apply(entered)
+        }
+      } catch (error) {
+        retry(error, enter)
+      }
+    }
+
+    const poll = async () => {
+      try {
+        const current = await queueStatus()
+        if (stopped) {
+          return
+        }
+        if (current === null || current.status === 'EXPIRED') {
+          await enter()
+          return
+        }
+        apply(current)
+      } catch (error) {
+        retry(error, poll)
+      }
+    }
+
+    poll()
 
     return () => {
-      eventSource.removeEventListener('waiting', handleWaiting)
-      eventSource.removeEventListener('allowed', handleAllowed)
-      eventSource.removeEventListener('expired', handleExpired)
-      eventSource.close()
+      stopped = true
+      window.clearTimeout(timer)
     }
-  }, [navigate, requestId, requestedUri])
+  }, [navigate, returnTo])
 
-  const displayedStatus = requestId ? status : 'error'
-  const displayedMessage = requestId
-    ? message
-    : '대기열 요청 정보를 확인할 수 없습니다.'
   const isActive =
-    displayedStatus === 'connecting' ||
-    displayedStatus === 'waiting' ||
-    displayedStatus === 'reconnecting'
+    status === 'connecting' || status === 'waiting' || status === 'reconnecting'
 
   return (
     <main className="queue-page">
@@ -178,15 +174,13 @@ function QueuePage() {
           </div>
         )}
 
-        <p
-          className={`queue-card__message queue-card__message--${displayedStatus}`}
-        >
-          {displayedMessage}
+        <p className={`queue-card__message queue-card__message--${status}`}>
+          {message}
         </p>
 
-        {(displayedStatus === 'expired' || displayedStatus === 'error') && (
+        {status === 'closed' && (
           <Link className="queue-card__retry-link" to="/">
-            좌석 페이지에서 다시 시도하기
+            좌석 페이지로 돌아가기
           </Link>
         )}
       </section>

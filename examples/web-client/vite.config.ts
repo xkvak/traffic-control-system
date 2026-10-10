@@ -14,10 +14,8 @@ export default defineConfig({
       "/api": {
         target: apiProxyTarget,
       },
-      "/turnstile": {
-        target: turnstileProxyTarget,
-      },
-      "/.well-known": {
+      // 대기열 API. 화면의 대기 페이지는 이 경로와 겹치지 않게 /waiting을 쓴다
+      "/queue": {
         target: turnstileProxyTarget,
       },
     },

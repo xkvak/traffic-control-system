@@ -5,7 +5,11 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router-dom'
-import { apiRequest, QueueRedirectError } from '../services/apiClient'
+import {
+  apiRequest,
+  leaveSession,
+  QueueRedirectError,
+} from '../services/apiClient'
 import './ReservationPage.css'
 
 type ReservationFeedback = {
@@ -95,6 +99,8 @@ function ReservationPage() {
       if (!/^\d+$/.test(responseBody)) {
         throw new Error('예약 결과를 확인할 수 없습니다.')
       }
+
+      void leaveSession()
 
       setFeedback({
         type: 'success',
