@@ -28,9 +28,9 @@ xychart-beta
 | 🔴 대기열 없음 |           **250명** | 300명부터 gateway CPU 포화(104%), 처리량 113 → 93건/초로 붕괴, p99 3~4.5초 |
 | 🟢 대기열 사용 | **15,000명 (60배)** | API 서버에는 초당 60명만 입장시켜 안정 유지, API 서버 p99 110ms 이하       |
 
-# 사용법
+# 빠르게 사용해보기
 
-## 실행하기
+# 내 서비스와 연동하기
 
 ```bash
 docker compose up --build -d
@@ -38,10 +38,10 @@ docker compose up --build -d
 
 서명 키는 첫 실행 때 `turnstile/keys/`에 자동으로 만들어집니다.
 
-| 주소                       | 내용                          |
-| -------------------------- | ----------------------------- |
-| http://localhost:5173      | 좌석 예매 데모                |
-| http://localhost:8083/docs | 대기열 API 문서               |
+| 주소                       | 내용            |
+| -------------------------- | --------------- |
+| http://localhost:5173      | 좌석 예매 데모  |
+| http://localhost:8083/docs | 대기열 API 문서 |
 
 ## 내 서비스에 붙이기
 
@@ -62,9 +62,9 @@ Gateway는 입장 토큰을 공개키(`turnstile/keys/public/public.pem`)로 검
 | 순서 | 요청                  | 하는 일                                                              |
 | :--: | --------------------- | -------------------------------------------------------------------- |
 |  1   | `POST /queue/enter`   | 자리가 있으면 `ALLOWED`와 토큰을, 없으면 `WAITING`과 순번을 받습니다 |
-|  2   | `GET /queue/status`   | `WAITING`이면 `retryAfterMs` 뒤에 다시 확인합니다                     |
+|  2   | `GET /queue/status`   | `WAITING`이면 `retryAfterMs` 뒤에 다시 확인합니다                    |
 |  3   | 서비스 API            | `Authorization: Bearer <token>`을 붙여 Gateway로 보냅니다            |
-|  4   | `POST /queue/refresh` | 머무는 동안 `refreshAfterMs`마다 호출해 토큰을 갱신합니다             |
+|  4   | `POST /queue/refresh` | 머무는 동안 `refreshAfterMs`마다 호출해 토큰을 갱신합니다            |
 |  5   | `POST /queue/leave`   | 다 쓰면 자리를 반납합니다                                            |
 
 대기 순번은 쿠키에 저장되어 새로고침해도 사라지지 않습니다. 구현 예시는 `examples/web-client`에 있습니다.
