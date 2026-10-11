@@ -8,7 +8,6 @@ dependencies = [
     "uvicorn[standard]",
     "redis[hiredis]>=5",
     "pyjwt[crypto]>=2.8",
-    "prometheus-client",
 ]
 
 [dependency-groups]

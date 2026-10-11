@@ -3,17 +3,12 @@ import logging
 import random
 from typing import Literal
 
-from prometheus_client import Counter, Gauge
 from pydantic import BaseModel, Field
 
 from store import Admitted, Expired, Missed, Queued, QueueStore, Rejected
 from tokens import TokenIssuer
 
 log = logging.getLogger("turnstile")
-
-WAITING = Gauge("turnstile_waiting", "Users waiting in the queue")
-ACTIVE = Gauge("turnstile_active", "Users holding a slot (claimed + awaiting claim)")
-EVENTS = Counter("turnstile_events", "Queue events", ["event"])
 
 
 class InvalidTicket(Exception):
@@ -47,9 +42,6 @@ class Turnstile:
         result = await self._store.enter()
         if isinstance(result, Rejected):
             return self._present(result), None
-        EVENTS.labels("entered").inc()
-        if isinstance(result, Admitted):
-            EVENTS.labels("admitted").inc()
         return self._present(result), self._tokens.issue_ticket(result.seq)
 
     async def poll(self, ticket: str | None) -> QueueStatus:
@@ -72,9 +64,6 @@ class Turnstile:
     async def dispatch_once(self) -> int:
         result = await self._store.dispatch()
         self._cursor, self._state, self._rate = result.cursor, result.state, result.rate
-        WAITING.set(result.waiting)
-        ACTIVE.set(result.used)
-        EVENTS.labels("admitted").inc(result.admitted)
         return result.admitted
 
     async def run_dispatcher(self, interval: float) -> None:
@@ -96,9 +85,7 @@ class Turnstile:
         self, result: Admitted | Queued | Missed | Expired | Rejected
     ) -> QueueStatus:
         match result:
-            case Admitted(seq=seq, expires_at_ms=exp, first_claim=first):
-                if first:
-                    EVENTS.labels("claimed").inc()
+            case Admitted(seq=seq, expires_at_ms=exp):
                 return QueueStatus(
                     status="ALLOWED",
                     token=self._tokens.issue_access(seq, exp),
@@ -107,10 +94,8 @@ class Turnstile:
             case Queued(rank=rank):
                 return self._waiting(rank)
             case Missed():
-                EVENTS.labels("claim_missed").inc()
                 return self._waiting(1)
             case Rejected(reason=reason):
-                EVENTS.labels(reason.lower()).inc()
                 return QueueStatus(status=reason)
             case Expired():
                 return QueueStatus(status="EXPIRED")

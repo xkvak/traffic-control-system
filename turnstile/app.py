@@ -18,7 +18,6 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from redis.exceptions import RedisError
 
@@ -177,9 +176,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/health", response_class=PlainTextResponse, include_in_schema=False)
     async def health():
         return "ok"
-
-    @app.get("/metrics", include_in_schema=False)
-    async def metrics():
-        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     return app

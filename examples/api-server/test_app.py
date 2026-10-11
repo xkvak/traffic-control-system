@@ -122,11 +122,3 @@ def test_reset_reopens_seats(c):
         cur.execute("SELECT COUNT(*) FROM concert_test.reservation")
         assert cur.fetchone()[0] == 0
 
-
-def test_metrics_use_route_templates(c):
-    c.get(SEATS)
-    body = c.get("/metrics").text
-    assert (
-        'http_server_requests_seconds_count{method="GET",status="200",uri="/api/v1/concerts/seats"}'
-        in body
-    )

@@ -8,7 +8,6 @@ dependencies = [
     "uvicorn[standard]",
     "aiomysql",
     "cryptography", # MySQL 8 기본 인증(caching_sha2_password)에 필요
-    "prometheus-client",
 ]
 
 [dependency-groups]
