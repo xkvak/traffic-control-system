@@ -49,7 +49,7 @@ services:
     container_name: turnstile-lb
     restart: unless-stopped
     ports:
-      - "8083:8083" # README·Gatling·vite 기본 주소
+      - "8083:8083" # README·Locust·vite 기본 주소
     volumes:
       - ./nginx/turnstile-lb.conf:/etc/nginx/nginx.conf:ro
     depends_on:
