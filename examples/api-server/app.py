@@ -1,24 +1,14 @@
-import time
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
-from prometheus_client import CONTENT_TYPE_LATEST, Histogram, generate_latest
 from pydantic import BaseModel
 
 from settings import Settings
 from store import ConcertStore, ReservationError
 
 MAX_BOOKER_NAME_LENGTH = 100
-
-# Spring Micrometer와 같은 이름·라벨이라 기존 Grafana 패널을 그대로 쓸 수 있다
-REQUESTS = Histogram(
-    "http_server_requests_seconds",
-    "HTTP server requests",
-    ["method", "uri", "status"],
-    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10),
-)
 
 
 class ReservationRequest(BaseModel):
@@ -59,17 +49,6 @@ async def reservation_error(request: Request, exc: ReservationError):
     return PlainTextResponse(str(exc), 400)
 
 
-async def record_metrics(request: Request, call_next):
-    start = time.perf_counter()
-    response = await call_next(request)
-    route = request.scope.get("route")
-    if route is not None and route.path not in ("/metrics", "/health"):
-        REQUESTS.labels(request.method, route.path, str(response.status_code)).observe(
-            time.perf_counter() - start
-        )
-    return response
-
-
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
 
@@ -84,14 +63,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Concert API", lifespan=lifespan)
     app.include_router(router)
     app.add_exception_handler(ReservationError, reservation_error)
-    app.middleware("http")(record_metrics)
 
     @app.get("/health", response_class=PlainTextResponse, include_in_schema=False)
     async def health():
         return "ok"
-
-    @app.get("/metrics", include_in_schema=False)
-    async def metrics():
-        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     return app

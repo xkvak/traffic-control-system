@@ -117,7 +117,6 @@ return {'ALLOWED', exp}
 class Admitted:
     seq: int
     expires_at_ms: int
-    first_claim: bool = False
 
 
 @dataclass(frozen=True)
@@ -197,7 +196,7 @@ class QueueStore:
     async def enter(self) -> Admitted | Queued | Rejected:
         match await self._enter(keys=KEYS, args=self._args):
             case ["ALLOWED", seq, exp]:
-                return Admitted(seq, exp, first_claim=True)
+                return Admitted(seq, exp)
             case ["WAITING", seq, rank]:
                 return Queued(seq, rank)
             case [reason]:
@@ -208,9 +207,7 @@ class QueueStore:
 
     async def claim(self, seq: int) -> Admitted | Queued | Missed | Expired:
         match await self._claim(keys=KEYS, args=[*self._args, seq]):
-            case ["CLAIMED", exp]:
-                return Admitted(seq, exp, first_claim=True)
-            case ["ALLOWED", exp]:
+            case ["CLAIMED" | "ALLOWED", exp]:
                 return Admitted(seq, exp)
             case ["MISSED"]:
                 return Missed(seq)
