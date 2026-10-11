@@ -1,5 +1,0 @@
-rootProject.name = 'traffic-control-system'
-
-include 'consumer-api'
-include 'api-gateway'
-include 'turnstile'

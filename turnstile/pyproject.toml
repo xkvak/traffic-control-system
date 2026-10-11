@@ -1,0 +1,15 @@
+[project]
+name = "turnstile"
+version = "0.1.0"
+description = "Standalone, horizontally scalable waiting room server"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "redis[hiredis]>=5",
+    "pyjwt[crypto]>=2.8",
+    "prometheus-client",
+]
+
+[dependency-groups]
+dev = ["pytest", "httpx2"]

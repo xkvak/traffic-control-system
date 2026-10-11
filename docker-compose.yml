@@ -1,90 +1,86 @@
+x-api-server: &api-server
+  build: ./examples/api-server
+  restart: unless-stopped
+  environment:
+    MYSQL_HOST: mysql
+  depends_on:
+    mysql:
+      condition: service_healthy
+  # host 포트를 열지 않는다: Gateway를 거치지 않는 직접 호출을 막는다
+
 services:
+  keygen:
+    build: ./turnstile
+    command:
+      [
+        "/app/.venv/bin/python",
+        "keygen.py",
+        "/keys/private.pem",
+        "/keys/public/public.pem",
+      ]
+    volumes:
+      - ./turnstile/keys:/keys
+    restart: "no"
+
   turnstile:
     build: ./turnstile
-    container_name: turnstile
     restart: unless-stopped
     environment:
-      ADMISSION_BUCKET_CAPACITY: ${ADMISSION_BUCKET_CAPACITY:-100}
-      ADMISSION_BUCKET_REFILL_AMOUNT: ${ADMISSION_BUCKET_REFILL_AMOUNT:-100}
-      ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS: ${ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS:-1}
-      MANAGEMENT_SERVER_PORT: 9091
-      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,prometheus
+      REDIS_URL: redis://redis:6379
+      PRIVATE_KEY_FILE: /keys/private.pem
+      MAX_ACTIVE_USERS: ${MAX_ACTIVE_USERS:-3000}
+      ADMIT_RATE_PER_SEC: ${ADMIT_RATE_PER_SEC:-60}
+      MAX_WAITING: ${MAX_WAITING:-70000} # 전체 대기 한도. turnstile 1대 기준이라 N대면 N × 70,000
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-60}
+      ADMIN_TOKEN: ${TURNSTILE_ADMIN_TOKEN:-}
+      COOKIE_SECURE: ${TURNSTILE_COOKIE_SECURE:-false} # 로컬 http 데모용. https 운영에서는 true
+    volumes:
+      - ./turnstile/keys:/keys:ro
     ports:
-      - "8083:8080"
+      - "8083:8080" # README·Gatling·vite 기본 주소. 여러 대로 늘리면 앞단에 LB를 둔다
     depends_on:
+      keygen:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
-
   gateway:
-    build: ./api-gateway
+    build: ./examples/gateway
     container_name: gateway
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      RATE_LIMITER_ENABLED: ${RATE_LIMITER_ENABLED:-true}
-      ADMISSION_BUCKET_CAPACITY: ${ADMISSION_BUCKET_CAPACITY:-100}
-      ADMISSION_BUCKET_REFILL_AMOUNT: ${ADMISSION_BUCKET_REFILL_AMOUNT:-100}
-      ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS: ${ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS:-1}
-      ADMISSION_BUCKET_REDIRECT_THRESHOLD: ${ADMISSION_BUCKET_REDIRECT_THRESHOLD:-2}
-      ADMISSION_BUCKET_MAX_IN_FLIGHT_CHECKS: ${ADMISSION_BUCKET_MAX_IN_FLIGHT_CHECKS:-100}
-      QUEUE_CLIENT_REDIRECT_URL: ${QUEUE_CLIENT_REDIRECT_URL:-http://localhost:5173/queue}
-      MANAGEMENT_SERVER_PORT: 9091
-      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,prometheus
-      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_METRICS_ENABLED: "true"
-      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_HTTPCLIENT_POOL_METRICS: "true"
+      UPSTREAMS: http://app1:8080,http://app2:8080
+      TOKEN_RATE_PER_SEC: ${TOKEN_RATE_PER_SEC:-2}
+      TOKEN_BURST: ${TOKEN_BURST:-10}
+    volumes:
+      - ./turnstile/keys/public:/keys:ro
     depends_on:
+      keygen:
+        condition: service_completed_successfully
       app1:
         condition: service_started
       app2:
         condition: service_started
-      redis:
-        condition: service_healthy
-
 
   web-client:
-    build: ./web-client
+    build: ./examples/web-client
     container_name: web-client
     restart: unless-stopped
     ports:
       - "5173:5173"
     environment:
       VITE_API_PROXY_TARGET: ${VITE_API_PROXY_TARGET:-http://gateway:8080}
+      VITE_TURNSTILE_PROXY_TARGET: ${VITE_TURNSTILE_PROXY_TARGET:-http://turnstile:8080}
     depends_on:
       gateway:
         condition: service_started
+      turnstile:
+        condition: service_started
 
-
-  app1:
-    build: ./consumer-api
-    ports:
-      - "8081:8080"
-    depends_on:
-      mysql:
-        condition: service_healthy
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/concert_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: root
-      MANAGEMENT_SERVER_PORT: 9091
-      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,prometheus
-    restart: unless-stopped
-  app2:
-    build: ./consumer-api
-    ports:
-      - "8082:8080"
-    depends_on:
-      mysql:
-        condition: service_healthy
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/concert_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: root
-      MANAGEMENT_SERVER_PORT: 9091
-      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,prometheus
-    restart: unless-stopped
-
+  app1: *api-server
+  app2: *api-server
 
   mysql:
     image: mysql:8.0
@@ -105,7 +101,6 @@ services:
       retries: 20
       start_period: 20s
 
-
   redis:
     image: redis:8.6.0
     restart: unless-stopped
@@ -122,7 +117,6 @@ services:
       retries: 20
       start_period: 5s
 
-
   prometheus:
     image: prom/prometheus:v3.12.0
     container_name: prometheus
@@ -131,7 +125,6 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     restart: unless-stopped
-
 
   grafana:
     image: grafana/grafana:13.1.0
