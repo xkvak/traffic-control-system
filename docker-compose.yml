@@ -25,6 +25,8 @@ services:
   turnstile:
     build: ./turnstile
     restart: unless-stopped
+    deploy:
+      replicas: 3 # 컨테이너당 프로세스 1개. 앞단 turnstile-lb가 8083으로 받아 나눠 준다
     environment:
       REDIS_URL: redis://redis:6379
       PRIVATE_KEY_FILE: /keys/private.pem
@@ -36,13 +38,22 @@ services:
       COOKIE_SECURE: ${TURNSTILE_COOKIE_SECURE:-false} # 로컬 http 데모용. https 운영에서는 true
     volumes:
       - ./turnstile/keys:/keys:ro
-    ports:
-      - "8083:8080" # README·Gatling·vite 기본 주소. 여러 대로 늘리면 앞단에 LB를 둔다
     depends_on:
       keygen:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+
+  turnstile-lb:
+    image: nginx:1.28.0-alpine
+    container_name: turnstile-lb
+    restart: unless-stopped
+    ports:
+      - "8083:8083" # README·Gatling·vite 기본 주소
+    volumes:
+      - ./nginx/turnstile-lb.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - turnstile
 
   gateway:
     build: ./examples/gateway
